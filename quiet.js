@@ -15,7 +15,7 @@ var Quiet = (function() {
     // initialization flags
     var emscriptenInitialized = false;
     var profilesFetched = false;
-    var memoryInitializerPrefix = "";
+    var memoryInitializerPrefixURL = "";
 
     // profiles is the string content of quiet-profiles.json
     var profiles;
@@ -587,57 +587,38 @@ var Quiet = (function() {
     }
 
     function gUMConstraints() {
-        if (navigator.webkitGetUserMedia !== undefined) {
-            return {
-                audio: {
-                    optional: [
-                      {googAutoGainControl: false},
-                      {googAutoGainControl2: false},
-                      {echoCancellation: false},
-                      {googEchoCancellation: false},
-                      {googEchoCancellation2: false},
-                      {googDAEchoCancellation: false},
-                      {googNoiseSuppression: false},
-                      {googNoiseSuppression2: false},
-                      {googHighpassFilter: false},
-                      {googTypingNoiseDetection: false},
-                      {googAudioMirroring: false}
-                    ]
-                }
-            };
-        }
-        if (navigator.mozGetUserMedia !== undefined) {
-            return {
-                audio: {
-                    echoCancellation: false,
-                    mozAutoGainControl: false,
-                    mozNoiseSuppression: false
-                }
-            };
-
-        }
         return {
             audio: {
                 echoCancellation: false
             }
-        };
+        }
     };
 
 
     function createAudioInput() {
         audioInput = 0; // prevent others from trying to create
         window.setTimeout(function() {
-            gUM.call(navigator, gUMConstraints(),
-                function(e) {
-                    audioInput = audioCtx.createMediaStreamSource(e);
+            const startAudioStream = function(e) {
+                console.log('start!')
+                audioInput = audioCtx.createMediaStreamSource(e);
 
-                    // stash a very permanent reference so this isn't collected
-                    window.quiet_receiver_anti_gc = audioInput;
+                // stash a very permanent reference so this isn't collected
+                window.quiet_receiver_anti_gc = audioInput;
 
-                    audioInputReady();
-                }, function(reason) {
-                    audioInputFailed(reason.name);
-                });
+                audioInputReady();
+            }
+
+            const handleAudioFailed = function(reason) {
+                console.log('failed!')
+                audioInputFailed(reason.name);
+            }
+
+            if (navigator.mediaDevices.getUserMedia) {
+                // preferred
+                navigator.mediaDevices.getUserMedia(gUMConstraints()).then(startAudioStream, handleAudioFailed)
+            } else {
+                gUM.call(navigator, gUMConstraints(), startAudioStream, handleAudioFailed);
+            }
         }, 0);
     };
 
@@ -734,7 +715,7 @@ var Quiet = (function() {
         // quiet does not create an audio input when it starts
         // getting microphone access requires a permission dialog so only ask for it if we need it
         if (gUM === undefined) {
-            gUM = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia);
+            gUM = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mediaDevices.getUserMedia || navigator.mozGetUserMedia);
         }
 
         if (gUM === undefined) {
@@ -855,6 +836,7 @@ var Quiet = (function() {
 
         // if this is the first receiver object created, wait for our input node to be created
         addAudioInputReadyCallback(function() {
+            console.log('audio input ready')
             audioInput.connect(scriptProcessor);
             if (opts.onCreate !== undefined) {
                 window.setTimeout(opts.onCreate, 0);
